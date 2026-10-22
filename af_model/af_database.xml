@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AF xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.0" PISystem="PISYSTEM01" Database="HyperscaleThermalGrid">
+  <AFDatabase Name="HyperscaleThermalGrid">
+    <Description>AVEVA OSIsoft PI Asset Framework Database for Data Center Thermal Telemetry</Description>
+    <ElementTemplate Name="ServerRack_Template">
+      <AttributeTemplate Name="Inlet_Air_Temp" Type="Single" DefaultUOM="°C">
+        <DataReference>PI Point</DataReference>
+        <ConfigString>\\PIDA01\%Element%.InletTemp;ptpath=true</ConfigString>
+      </AttributeTemplate>
+      <AttributeTemplate Name="Exhaust_Air_Temp" Type="Single" DefaultUOM="°C">
+        <DataReference>PI Point</DataReference>
+        <ConfigString>\\PIDA01\%Element%.ExhaustTemp;ptpath=true</ConfigString>
+      </AttributeTemplate>
+      <AttributeTemplate Name="Power_kW" Type="Single" DefaultUOM="kW">
+        <DataReference>PI Point</DataReference>
+        <ConfigString>\\PIDA01\%Element%.Power;ptpath=true</ConfigString>
+      </AttributeTemplate>
+      <AttributeTemplate Name="Delta_T" Type="Single" DefaultUOM="°C">
+        <DataReference>Formula</DataReference>
+        <ConfigString>A=Exhaust_Air_Temp;B=Inlet_Air_Temp;[A-B]</ConfigString>
+      </AttributeTemplate>
+    </ElementTemplate>
+
+    <Element Name="Bengaluru DC1 - Whitefield">
+      <Element Name="Server Hall 01">
+        <Element Name="Row A">
+          <Element Name="Rack A01" Template="ServerRack_Template" />
+          <Element Name="Rack A02" Template="ServerRack_Template" />
+          <Element Name="Rack A03" Template="ServerRack_Template" />
+          <Element Name="Rack A04" Template="ServerRack_Template" />
+        </Element>
+      </Element>
+      <Element Name="Central Chiller Plant">
+        <Element Name="Chiller 01" />
+        <Element Name="CDU 01" />
+      </Element>
+    </Element>
+  </AFDatabase>
+</AF>

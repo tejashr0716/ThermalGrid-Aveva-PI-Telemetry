@@ -1,0 +1,8 @@
+{
+  "name": "thermalgrid",
+  "version": "1.0.0",
+  "description": "Hyperscale Data Center & Smart Facility Energy/Thermal Telemetry via AVEVA OSIsoft PI Web API",
+  "scripts": {
+    "start": "python src/main.py"
+  }
+}

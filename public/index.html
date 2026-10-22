@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ThermalGrid — Hyperscale Data Center Telemetry via AVEVA OSIsoft PI Web API</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
+            pi: { blue: '#0284c7', orange: '#ea580c', purple: '#8b5cf6' }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #080d1a; color: #e2e8f0; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .glass-card { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(51, 65, 85, 0.6); }
+    .glass-card:hover { border-color: rgba(59, 130, 246, 0.5); }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #080d1a; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
+    .tab-btn.active { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border-bottom: 2px solid #3b82f6; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-blue-500 selection:text-white">
+
+  <!-- TOP INDUSTRIAL HEADER -->
+  <header class="border-b border-slate-800 bg-slate-950/90 sticky top-0 z-40 backdrop-blur-md">
+    <div class="max-w-[1720px] mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+      <!-- Title & Industrial Badges -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-700 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+          <i class="fa-solid fa-server text-lg"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
+              ThermalGrid
+              <span class="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-mono border border-blue-500/30">AVEVA PI Web API Batch v2023</span>
+            </h1>
+          </div>
+          <p class="text-[11px] text-slate-400 font-mono flex items-center gap-2">
+            <span>DA: <strong class="text-slate-200">PIDA01</strong></span>
+            <span>•</span>
+            <span>AF: <strong class="text-slate-200">HyperscaleThermalGrid</strong></span>
+            <span>•</span>
+            <span class="flex items-center gap-1 text-emerald-400"><i class="fa-solid fa-circle text-[8px] animate-pulse"></i> 32 Racks / 5,120 Tags</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Live Telemetry KPI Pills -->
+      <div class="hidden xl:flex items-center gap-4 text-xs font-mono">
+        <div class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+          <span class="text-slate-400">Total Facility Power:</span>
+          <span class="text-blue-400 font-bold ml-1.5" id="kpi-facility-power">18.42 MW</span>
+        </div>
+        <div class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+          <span class="text-slate-400">Total IT Load:</span>
+          <span class="text-cyan-400 font-bold ml-1.5" id="kpi-it-load">15.88 MW</span>
+        </div>
+        <div class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+          <span class="text-slate-400">Live PUE:</span>
+          <span class="text-emerald-400 font-bold ml-1.5" id="kpi-pue">1.16</span>
+          <span class="text-slate-500 text-[10px]">(Target: 1.12)</span>
+        </div>
+        <div class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+          <span class="text-slate-400">Chilled Water Supply:</span>
+          <span class="text-purple-400 font-bold ml-1.5" id="kpi-chw-temp">7.2°C</span>
+        </div>
+      </div>
+
+      <!-- Action & Control Buttons -->
+      <div class="flex items-center gap-2">
+        <button onclick="toggleTelemetryStream()" id="btn-stream" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-semibold flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-play" id="icon-stream"></i> <span id="label-stream">Streaming (20Hz)</span>
+        </button>
+        <button onclick="toggleInspectorDrawer()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 font-mono text-xs flex items-center gap-1.5 transition" title="Inspect PI Web API Batch Endpoints">
+          <i class="fa-solid fa-network-wired"></i> PI Web API Batch Sniffer
+        </button>
+        <button onclick="toggleAudioSynthesizer()" id="btn-audio" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs transition">
+          <i class="fa-solid fa-volume-high" id="icon-audio"></i>
+        </button>
+        <button onclick="exportTelemetryData('csv')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs transition" title="Export CSV Report">
+          <i class="fa-solid fa-file-csv"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs Bar -->
+    <div class="max-w-[1720px] mx-auto px-4 flex items-center gap-1 border-t border-slate-800/60 overflow-x-auto custom-scrollbar">
+      <button onclick="switchTab('heatmap')" id="tab-heatmap" class="tab-btn active px-4 py-2 text-xs font-semibold tracking-wide transition flex items-center gap-2">
+        <i class="fa-solid fa-fire-flame-curved text-blue-400"></i> Server Hall Thermal Heatmap
+      </button>
+      <button onclick="switchTab('pue-cooling')" id="tab-pue-cooling" class="tab-btn px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white tracking-wide transition flex items-center gap-2">
+        <i class="fa-solid fa-gauge-high text-emerald-400"></i> PUE & Liquid Cooling Loop
+      </button>
+      <button onclick="switchTab('af-tree')" id="tab-af-tree" class="tab-btn px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white tracking-wide transition flex items-center gap-2">
+        <i class="fa-solid fa-sitemap text-purple-400"></i> PI Asset Framework (AF)
+      </button>
+      <button onclick="switchTab('event-frames')" id="tab-event-frames" class="tab-btn px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white tracking-wide transition flex items-center gap-2">
+        <i class="fa-solid fa-bell text-amber-400"></i> Thermal Event Frames
+      </button>
+      <button onclick="switchTab('interview')" id="tab-interview" class="tab-btn px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white tracking-wide transition flex items-center gap-2">
+        <i class="fa-solid fa-graduation-cap text-rose-400"></i> Accenture Interview Playbook
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN VIEWPORT -->
+  <main class="flex-1 max-w-[1720px] w-full mx-auto p-4 space-y-4">
+
+    <!-- VIEW 1: SERVER HALL THERMAL HEATMAP -->
+    <section id="view-heatmap" class="space-y-4">
+      <!-- Simulation Controls Bar -->
+      <div class="glass-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-4 flex-wrap text-xs font-mono">
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400">Hall Ambient:</span>
+            <span class="font-bold text-white" id="val-ambient-temp">21.4°C</span>
+          </div>
+          <div class="h-4 w-px bg-slate-800"></div>
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400">CDU Flow Rate:</span>
+            <span class="font-bold text-cyan-400" id="val-cdu-flow">420 LPM</span>
+          </div>
+        </div>
+
+        <!-- Simulation Scenario Triggers -->
+        <div class="flex items-center gap-2 flex-wrap">
+          <button onclick="triggerAiTrainingBurst()" class="px-2.5 py-1.5 rounded-lg bg-rose-900/40 border border-rose-700/50 hover:bg-rose-800/50 text-rose-300 text-xs font-mono transition">
+            <i class="fa-solid fa-bolt"></i> +400 kW AI Cluster Burst
+          </button>
+          <button onclick="triggerChillerDegrade()" class="px-2.5 py-1.5 rounded-lg bg-amber-900/40 border border-amber-700/50 hover:bg-amber-800/50 text-amber-300 text-xs font-mono transition">
+            <i class="fa-solid fa-triangle-exclamation"></i> Chiller Temp Rise (+5°C)
+          </button>
+          <button onclick="triggerCduValveOverride()" class="px-2.5 py-1.5 rounded-lg bg-blue-900/40 border border-blue-700/50 hover:bg-blue-800/50 text-blue-300 text-xs font-mono transition">
+            <i class="fa-solid fa-droplet"></i> Boost CDU Coolant Flow
+          </button>
+          <button onclick="resetThermalState()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 text-xs font-mono transition">
+            <i class="fa-solid fa-rotate-left"></i> Reset Thermal Matrix
+          </button>
+        </div>
+      </div>
+
+      <!-- 2D Canvas Server Hall Heatmap -->
+      <div class="glass-card rounded-2xl p-5 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-800">
+          <div>
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+              <i class="fa-solid fa-table-cells text-blue-400"></i> Server Hall 01 — 32 High-Density Racks Isotherm Matrix
+            </h3>
+            <p class="text-[11px] text-slate-400 font-mono">Row A (AI GPU), Row B (Cloud Compute), Row C (Storage Array), Row D (Network Spine)</p>
+          </div>
+          <!-- Color Legend -->
+          <div class="flex items-center gap-3 text-[10px] font-mono">
+            <span class="flex items-center gap-1 text-cyan-300"><span class="w-3 h-3 rounded bg-blue-600"></span> &lt;20°C (Cold)</span>
+            <span class="flex items-center gap-1 text-emerald-300"><span class="w-3 h-3 rounded bg-emerald-500"></span> 20-24°C (Opt)</span>
+            <span class="flex items-center gap-1 text-amber-300"><span class="w-3 h-3 rounded bg-amber-500"></span> 25-27°C (Warm)</span>
+            <span class="flex items-center gap-1 text-rose-300"><span class="w-3 h-3 rounded bg-rose-600 animate-pulse"></span> &gt;27°C (Excursion)</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4" id="server-rows-container">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Selected Rack Deep Telemetry Card -->
+      <div class="glass-card rounded-2xl p-5 border border-blue-500/40 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></span>
+              <h3 class="text-sm font-bold text-white font-mono uppercase" id="focus-rack-title">Rack Focus: Rack A01 (Row A - AI GPU Cluster)</h3>
+              <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono border border-slate-700">Template: ServerRack_Template</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">Direct-to-chip liquid cold plates + dual front-to-back variable CFM exhaust fans</p>
+          </div>
+          <div class="text-xs font-mono text-slate-400">
+            <span>PI WebID:</span>
+            <code class="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-blue-400 text-[10px]" id="focus-rack-webid">P0Rack_RowA_01</code>
+          </div>
+        </div>
+
+        <!-- 6 Telemetry Gauges -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3" id="rack-gauges-grid">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: PUE & LIQUID COOLING LOOP -->
+    <section id="view-pue-cooling" class="hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <!-- PUE Gauge -->
+        <div class="glass-card rounded-2xl p-5 space-y-4">
+          <div class="border-b border-slate-800 pb-2">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+              <i class="fa-solid fa-gauge-high text-emerald-400"></i> Dynamic PUE Ratio
+            </h3>
+            <p class="text-[11px] text-slate-400 font-mono">Calculated via AF Formula: Total_Facility_Power / Total_IT_Power</p>
+          </div>
+
+          <div class="text-center py-6 space-y-2">
+            <div class="text-5xl font-extrabold font-mono text-emerald-400" id="gauge-pue-val">1.16</div>
+            <div class="text-xs font-mono text-slate-400">Current Facility Efficiency</div>
+            <div class="inline-block px-3 py-1 rounded-full text-xs font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              ASHRAE Class A1 Compliant
+            </div>
+          </div>
+
+          <div class="space-y-2 text-xs font-mono border-t border-slate-800 pt-3">
+            <div class="flex justify-between text-slate-400">
+              <span>World-Class Target:</span>
+              <span class="text-white font-bold">1.10 - 1.15</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Industry Average:</span>
+              <span class="text-white font-bold">1.58</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Estimated Power Saved:</span>
+              <span class="text-emerald-400 font-bold">6,650 MWh / yr</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chiller & CDU Direct-to-Chip Liquid Cooling Flow Schematic -->
+        <div class="glass-card rounded-2xl p-5 lg:col-span-2 space-y-4">
+          <div class="border-b border-slate-800 pb-2">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+              <i class="fa-solid fa-diagram-project text-cyan-400"></i> Liquid Direct-to-Chip Cooling Flow Loop
+            </h3>
+            <p class="text-[11px] text-slate-400 font-mono">Primary Chilled Water Loop & Secondary CDU Direct-to-Chip Circuit</p>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
+            <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div class="flex items-center gap-2 text-blue-400 font-bold">
+                <i class="fa-solid fa-snowflake"></i> Chiller Plant (1,200 TR)
+              </div>
+              <div class="space-y-1 text-[11px]">
+                <div class="flex justify-between text-slate-400"><span>Supply Temp:</span> <strong class="text-white" id="flow-chw-supply">7.2°C</strong></div>
+                <div class="flex justify-between text-slate-400"><span>Return Temp:</span> <strong class="text-white" id="flow-chw-return">13.8°C</strong></div>
+                <div class="flex justify-between text-slate-400"><span>Evaporator ΔT:</span> <strong class="text-cyan-400">6.6°C</strong></div>
+              </div>
+            </div>
+
+            <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div class="flex items-center gap-2 text-cyan-400 font-bold">
+                <i class="fa-solid fa-pump-soap"></i> Coolant Dist. Unit (CDU)
+              </div>
+              <div class="space-y-1 text-[11px]">
+                <div class="flex justify-between text-slate-400"><span>Circulation Flow:</span> <strong class="text-emerald-400" id="flow-cdu-lpm">420 LPM</strong></div>
+                <div class="flex justify-between text-slate-400"><span>Loop Pressure:</span> <strong class="text-white">2.8 Bar</strong></div>
+                <div class="flex justify-between text-slate-400"><span>Heat Exchanged:</span> <strong class="text-purple-400">1,840 kW</strong></div>
+              </div>
+            </div>
+
+            <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div class="flex items-center gap-2 text-purple-400 font-bold">
+                <i class="fa-solid fa-microchip"></i> Server Cold Plates
+              </div>
+              <div class="space-y-1 text-[11px]">
+                <div class="flex justify-between text-slate-400"><span>GPU Core Temp:</span> <strong class="text-white" id="flow-gpu-core">58.4°C</strong></div>
+                <div class="flex justify-between text-slate-400"><span>TDP Consumption:</span> <strong class="text-rose-400">700W / blade</strong></div>
+                <div class="flex justify-between text-slate-400"><span>Hot Aisle Delta:</span> <strong class="text-amber-400" id="flow-delta-t">12.5°C</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: PI ASSET FRAMEWORK (AF) TREE EXPLORER -->
+    <section id="view-af-tree" class="hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <!-- Left: Navigable AF Hierarchy Tree -->
+        <div class="glass-card rounded-2xl p-5 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+              <i class="fa-solid fa-folder-tree text-purple-400"></i> AF Element Hierarchy
+            </h3>
+            <span class="text-[10px] text-slate-400 font-mono">DB: HyperscaleThermalGrid</span>
+          </div>
+
+          <div class="space-y-1 font-mono text-xs custom-scrollbar max-h-[500px] overflow-y-auto" id="af-tree-container">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Right: AF Attributes & Data References Table -->
+        <div class="glass-card rounded-2xl p-5 lg:col-span-2 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div>
+              <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <i class="fa-solid fa-list-check text-emerald-400"></i> AF Attributes & Data References
+              </h3>
+              <p class="text-[11px] text-slate-400 font-mono mt-0.5" id="af-selected-elem-path">Path: \PISYSTEM01\HyperscaleThermalGrid\Bengaluru DC1\Server Hall 01\Row A\Rack A01</p>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono border border-blue-500/30">Template: ServerRack_Template</span>
+          </div>
+
+          <div class="overflow-x-auto custom-scrollbar">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="bg-slate-900/80 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="py-2.5 px-3">Attribute Name</th>
+                  <th class="py-2.5 px-3">Data Reference</th>
+                  <th class="py-2.5 px-3">Config / Tag Path</th>
+                  <th class="py-2.5 px-3 text-right">Live Value</th>
+                  <th class="py-2.5 px-3">UOM</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60" id="af-attributes-table-body">
+                <!-- Rendered by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: PI EVENT FRAMES & TRIPS -->
+    <section id="view-event-frames" class="hidden space-y-4">
+      <div class="glass-card rounded-2xl p-5 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2 flex-wrap gap-2">
+          <div>
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+              <i class="fa-solid fa-bell text-amber-400"></i> Thermal & Energy PI Event Frames
+            </h3>
+            <p class="text-[11px] text-slate-400 font-mono">Automated detection of ASHRAE thermal excursions, PUE spikes, and pump cavitation</p>
+          </div>
+          <button onclick="clearAcknowledgedEvents()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono border border-slate-700 transition">
+            Acknowledge All
+          </button>
+        </div>
+
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-left text-xs font-mono">
+            <thead class="bg-slate-900/80 text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="py-2.5 px-3">Event Frame ID</th>
+                <th class="py-2.5 px-3">Asset Path</th>
+                <th class="py-2.5 px-3">Event Type</th>
+                <th class="py-2.5 px-3">Trigger Condition</th>
+                <th class="py-2.5 px-3">Duration</th>
+                <th class="py-2.5 px-3">Severity</th>
+                <th class="py-2.5 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60" id="event-frames-tbody">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 5: ACCENTURE INTERVIEW PLAYBOOK -->
+    <section id="view-interview" class="hidden space-y-4">
+      <div class="glass-card rounded-2xl p-6 border border-blue-500/30 space-y-5">
+        <div class="border-b border-slate-800 pb-3">
+          <span class="text-xs px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 font-mono font-bold">ACCENTURE INTERVIEW READINESS GUIDE</span>
+          <h2 class="text-base font-bold text-white mt-2">Data Center & Industrial Facility Energy Telemetry via AVEVA PI System</h2>
+          <p class="text-xs text-slate-400 mt-1">Key technical responses for custom software engineering and industrial telemetry interviews.</p>
+        </div>
+
+        <div class="space-y-4">
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+            <h4 class="text-xs font-bold text-blue-400 font-mono">Q1: "How does the PI Web API Batch endpoint optimize high-density sensor architectures?"</h4>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              <strong>Answer:</strong> When monitoring 32 racks with 20 sensors each (640 data streams), issuing 640 discrete HTTP requests exhausts connection pool sockets and causes HTTP 429 rate-limiting. Using <code>POST /piwebapi/batch</code>, we package all 640 tag requests into a single JSON payload. The PI Web API server resolves the requests internally against the PI Data Archive and returns a single unified JSON map, reducing network round-trip latency by over 95%.
+            </p>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+            <h4 class="text-xs font-bold text-emerald-400 font-mono">Q2: "How do you calculate complex KPIs like Power Usage Effectiveness (PUE) in the PI System?"</h4>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              <strong>Answer:</strong> Rather than hardcoding formulas in client applications, we define <strong>Formula Data References</strong> or <strong>AF Analyses</strong> directly within the PI Asset Framework element templates: <code>Total_Facility_Power / Total_IT_Power</code>. This ensures that any change in facility metering topology is centrally managed in AF, and any application consuming the PI Web API automatically receives the official, calibrated PUE value.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- PI WEB API BATCH INSPECTOR DRAWER -->
+  <aside id="inspector-drawer" class="fixed right-0 top-0 bottom-0 w-full sm:w-[540px] bg-slate-950 border-l border-slate-800 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col font-mono text-xs">
+    <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-network-wired text-blue-400"></i>
+        <h3 class="font-bold text-white uppercase tracking-wider text-xs">PI Web API Batch Inspector</h3>
+      </div>
+      <button onclick="toggleInspectorDrawer()" class="text-slate-400 hover:text-white text-base">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <!-- Live Request Feed -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar" id="inspector-logs">
+      <!-- Injected by JS -->
+    </div>
+
+    <div class="p-3 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between text-[11px] text-slate-400">
+      <span id="inspector-status"><i class="fa-solid fa-circle text-emerald-400 text-[8px] animate-pulse"></i> Batch Stream: Active</span>
+      <button onclick="clearInspectorLogs()" class="hover:text-white transition">Clear Logs</button>
+    </div>
+  </aside>
+
+  <!-- JAVASCRIPT INDUSTRIAL TELEMETRY ENGINE -->
+  <script>
+    let isStreaming = true;
+    let audioEnabled = true;
+    let selectedRackKey = "A01";
+    let audioCtx = null;
+
+    // 32 Racks across 4 Rows
+    const rows = ["Row A", "Row B", "Row C", "Row D"];
+    const racks = {};
+    rows.forEach(r => {
+      for (let i = 1; i <= 8; i++) {
+        const key = `${r.charAt(4)}${i < 10 ? '0' + i : i}`;
+        racks[key] = {
+          key: key,
+          row: r,
+          inletTemp: 21.0 + (Math.random() * 2), // °C
+          exhaustTemp: 32.5 + (Math.random() * 3), // °C
+          powerKw: r === "Row A" ? (85 + Math.random() * 15) : (35 + Math.random() * 8), // High-density on Row A
+          coreTemp: 56.0 + (Math.random() * 5),
+          fanRpm: 4200 + Math.floor(Math.random() * 300),
+          status: 'NORMAL'
+        };
+      }
+    });
+
+    const eventFrames = [
+      { id: "EF-4011", asset: "Rack A04 (AI GPU)", type: "THERMAL_HOTSPOT_RUNAWAY", trigger: "InletTemp > 27.0°C (ASHRAE A1 Limit)", duration: "6m 18s", severity: "CRITICAL", ack: false },
+      { id: "EF-4008", asset: "Central Chiller 01", type: "PUE_DEGRADATION", trigger: "PUE > 1.25 for > 10m", duration: "18m 02s", severity: "WARNING", ack: false }
+    ];
+
+    function playTone(freq = 440, type = 'sine', dur = 0.1) {
+      if (!audioEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + dur);
+      } catch(e) {}
+    }
+
+    function toggleAudioSynthesizer() {
+      audioEnabled = !audioEnabled;
+      document.getElementById("icon-audio").className = audioEnabled ? "fa-solid fa-volume-high text-blue-400" : "fa-solid fa-volume-xmark text-slate-500";
+      playTone(audioEnabled ? 880 : 330);
+    }
+
+    function switchTab(tabName) {
+      playTone(660);
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('tab-' + tabName).classList.add('active');
+
+      ['heatmap', 'pue-cooling', 'af-tree', 'event-frames', 'interview'].forEach(view => {
+        document.getElementById('view-' + view).classList.toggle('hidden', view !== tabName);
+      });
+
+      if (tabName === 'af-tree') renderAfTree();
+      if (tabName === 'event-frames') renderEventFrames();
+    }
+
+    function renderServerRows() {
+      const container = document.getElementById('server-rows-container');
+      container.innerHTML = rows.map(r => {
+        const rowRacks = Object.values(racks).filter(item => item.row === r);
+        return `
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between pb-1.5 border-b border-slate-800 text-xs font-mono font-bold text-white">
+              <span>${r}</span>
+              <span class="text-[10px] text-slate-400">${r === "Row A" ? "AI Cluster" : "Compute"}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              ${rowRacks.map(rk => {
+                let colorClass = "bg-blue-950/80 border-blue-800 text-blue-300";
+                if (rk.inletTemp >= 23 && rk.inletTemp < 26) colorClass = "bg-emerald-950/80 border-emerald-700 text-emerald-300";
+                if (rk.inletTemp >= 26 && rk.inletTemp < 27.5) colorClass = "bg-amber-950/80 border-amber-700 text-amber-300";
+                if (rk.inletTemp >= 27.5) colorClass = "bg-rose-950/80 border-rose-600 text-rose-300 animate-pulse";
+                const isSel = selectedRackKey === rk.key ? "ring-2 ring-blue-400" : "";
+
+                return `
+                  <div onclick="selectRack('${rk.key}')" class="p-2 rounded-lg border cursor-pointer transition transform hover:scale-105 font-mono text-[11px] ${colorClass} ${isSel}">
+                    <div class="flex justify-between font-bold">
+                      <span>${rk.key}</span>
+                      <span>${rk.inletTemp.toFixed(1)}°C</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 flex justify-between mt-1">
+                      <span>${rk.powerKw.toFixed(0)} kW</span>
+                      <span>Δ${(rk.exhaustTemp - rk.inletTemp).toFixed(0)}°</span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function selectRack(key) {
+      selectedRackKey = key;
+      playTone(720);
+      renderServerRows();
+      renderRackGauges();
+    }
+
+    function renderRackGauges() {
+      const rk = racks[selectedRackKey] || racks["A01"];
+      document.getElementById('focus-rack-title').innerText = `Rack Focus: Rack ${rk.key} (${rk.row})`;
+      document.getElementById('focus-rack-webid').innerText = `P0Rack_${rk.key}`;
+
+      const gauges = [
+        { label: "Inlet Air Temp", val: `${rk.inletTemp.toFixed(1)}°C`, sub: "ASHRAE Limit: 27°C", color: rk.inletTemp > 27 ? "text-rose-400 font-bold" : "text-emerald-400" },
+        { label: "Exhaust Temp", val: `${rk.exhaustTemp.toFixed(1)}°C`, sub: "Hot Aisle Return", color: "text-amber-400" },
+        { label: "Hot Aisle ΔT", val: `${(rk.exhaustTemp - rk.inletTemp).toFixed(1)}°C`, sub: "Formula: Exhaust-Inlet", color: "text-cyan-400" },
+        { label: "Power Load", val: `${rk.powerKw.toFixed(1)} kW`, sub: "Tag: PDU.ActivePower", color: "text-blue-400 font-bold" },
+        { label: "GPU Cold-Plate", val: `${rk.coreTemp.toFixed(1)}°C`, sub: "Direct-to-Chip Core", color: "text-purple-400" },
+        { label: "Exhaust Fan", val: `${rk.fanRpm} RPM`, sub: "Variable VFD", color: "text-slate-300" }
+      ];
+
+      document.getElementById('rack-gauges-grid').innerHTML = gauges.map(g => `
+        <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1 font-mono">
+          <span class="text-slate-400 text-[10px] block truncate">${g.label}</span>
+          <div class="text-base font-bold ${g.color} truncate">${g.val}</div>
+          <span class="text-[9px] text-slate-500 block truncate">${g.sub}</span>
+        </div>
+      `).join('');
+    }
+
+    function renderAfTree() {
+      document.getElementById('af-tree-container').innerHTML = `
+        <div class="space-y-1">
+          <div class="flex items-center gap-1.5 text-blue-400 font-bold">
+            <i class="fa-solid fa-database text-xs"></i> HyperscaleThermalGrid (AF Database)
+          </div>
+          <div class="pl-4 space-y-1 border-l border-slate-800 mt-1">
+            <div class="text-slate-200"><i class="fa-solid fa-city text-xs text-slate-400"></i> Bengaluru DC1 - Whitefield</div>
+            <div class="pl-4 space-y-1 border-l border-slate-800 mt-1">
+              <div class="text-amber-400"><i class="fa-solid fa-snowflake text-xs"></i> Central Chiller Plant</div>
+              <div class="text-slate-200 mt-2"><i class="fa-solid fa-server text-xs text-blue-400"></i> Server Hall 01</div>
+              <div class="pl-4 space-y-0.5 border-l border-slate-800 text-[11px]">
+                <div class="text-cyan-400 cursor-pointer" onclick="selectRack('A01')">↳ Row A (AI Clusters - Racks A01-A08)</div>
+                <div class="text-slate-400 cursor-pointer" onclick="selectRack('B01')">↳ Row B (General Compute)</div>
+                <div class="text-slate-400 cursor-pointer" onclick="selectRack('C01')">↳ Row C (Storage Array)</div>
+                <div class="text-slate-400 cursor-pointer" onclick="selectRack('D01')">↳ Row D (Spine Network)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      renderAfAttributesTable();
+    }
+
+    function renderAfAttributesTable() {
+      const rk = racks[selectedRackKey] || racks["A01"];
+      const rows = [
+        { name: "Inlet_Air_Temp", ref: "PI Point", config: `\\PIDA01\${rk.key}.InletTemp;ptpath=true`, val: rk.inletTemp.toFixed(1), uom: "°C" },
+        { name: "Exhaust_Air_Temp", ref: "PI Point", config: `\\PIDA01\${rk.key}.ExhaustTemp;ptpath=true`, val: rk.exhaustTemp.toFixed(1), uom: "°C" },
+        { name: "Power_kW", ref: "PI Point", config: `\\PIDA01\${rk.key}.Power;ptpath=true`, val: rk.powerKw.toFixed(1), uom: "kW" },
+        { name: "Delta_T", ref: "Formula", config: `A=Exhaust_Air_Temp;B=Inlet_Air_Temp;[A-B]`, val: (rk.exhaustTemp - rk.inletTemp).toFixed(1), uom: "°C" },
+        { name: "PUE_Ratio", ref: "Formula", config: `A=Total_Facility_Power;B=Total_IT_Power;[A/B]`, val: "1.16", uom: "ratio" }
+      ];
+
+      document.getElementById('af-attributes-table-body').innerHTML = rows.map(r => `
+        <tr class="hover:bg-slate-900/50 transition">
+          <td class="py-2 px-3 font-bold text-white">${r.name}</td>
+          <td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[10px] ${r.ref === 'PI Point' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'}">${r.ref}</span></td>
+          <td class="py-2 px-3 text-slate-400 text-[11px] truncate max-w-xs">${r.config}</td>
+          <td class="py-2 px-3 text-right font-bold text-cyan-400">${r.val}</td>
+          <td class="py-2 px-3 text-slate-500">${r.uom}</td>
+        </tr>
+      `).join('');
+    }
+
+    function renderEventFrames() {
+      document.getElementById('event-frames-tbody').innerHTML = eventFrames.map(ef => `
+        <tr class="hover:bg-slate-900/50 transition">
+          <td class="py-2.5 px-3 font-bold text-white">${ef.id}</td>
+          <td class="py-2.5 px-3 text-blue-400 font-bold">${ef.asset}</td>
+          <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">${ef.type}</span></td>
+          <td class="py-2.5 px-3 text-slate-400 text-[11px]">${ef.trigger}</td>
+          <td class="py-2.5 px-3 text-slate-300">${ef.duration}</td>
+          <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${ef.severity === 'CRITICAL' ? 'bg-rose-500/20 text-rose-300' : 'bg-amber-500/20 text-amber-300'}">${ef.severity}</span></td>
+          <td class="py-2.5 px-3 text-right"><button onclick="ackEvent('${ef.id}')" class="px-2 py-1 rounded bg-slate-800 text-slate-300 text-[10px]">Ack</button></td>
+        </tr>
+      `).join('');
+    }
+
+    function ackEvent(id) {
+      playTone(550);
+      const ef = eventFrames.find(e => e.id === id);
+      if (ef) ef.severity = "ACKNOWLEDGED";
+      renderEventFrames();
+    }
+
+    function clearAcknowledgedEvents() {
+      playTone(440);
+      eventFrames.length = 0;
+      renderEventFrames();
+    }
+
+    function toggleInspectorDrawer() {
+      document.getElementById('inspector-drawer').classList.toggle('translate-x-full');
+      playTone(600);
+    }
+
+    function addInspectorLog(method, endpoint, status, data) {
+      const logs = document.getElementById('inspector-logs');
+      const entry = document.createElement('div');
+      entry.className = "p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5";
+      entry.innerHTML = `
+        <div class="flex items-center justify-between">
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300">${method}</span>
+          <span class="text-[10px] text-slate-500">${new Date().toLocaleTimeString()}</span>
+        </div>
+        <div class="text-[11px] text-cyan-400 break-all font-mono">${endpoint}</div>
+        <div class="text-[10px] text-slate-400 bg-slate-950 p-2 rounded border border-slate-900 overflow-x-auto">${JSON.stringify(data, null, 2)}</div>
+      `;
+      logs.prepend(entry);
+      if (logs.children.length > 25) logs.removeChild(logs.lastChild);
+    }
+
+    function clearInspectorLogs() {
+      document.getElementById('inspector-logs').innerHTML = '';
+      playTone(440);
+    }
+
+    function triggerAiTrainingBurst() {
+      ["A01", "A02", "A03", "A04"].forEach(k => {
+        racks[k].powerKw += 45;
+        racks[k].inletTemp += 3.8;
+        racks[k].exhaustTemp += 7.2;
+      });
+      playTone(940, 'sawtooth', 0.25);
+      renderServerRows();
+      renderRackGauges();
+      addInspectorLog('POST', '/piwebapi/batch', 200, {
+        BatchId: "AI_BURST_INGEST_104",
+        ResolvedQueries: 64,
+        Status: "200 OK",
+        PayloadDeltaKw: 180
+      });
+    }
+
+    function triggerChillerDegrade() {
+      document.getElementById('kpi-chw-temp').innerText = "12.2°C";
+      document.getElementById('gauge-pue-val').innerText = "1.28";
+      document.getElementById('gauge-pue-val').className = "text-5xl font-extrabold font-mono text-rose-400";
+      playTone(280, 'square', 0.35);
+      addInspectorLog('POST', '/piwebapi/eventframes', 201, {
+        Event: "PUE_EFFICIENCY_DEGRADATION",
+        PueValue: 1.28,
+        Severity: "CRITICAL"
+      });
+    }
+
+    function triggerCduValveOverride() {
+      document.getElementById('val-cdu-flow').innerText = "520 LPM";
+      document.getElementById('flow-cdu-lpm').innerText = "520 LPM";
+      playTone(780, 'sine', 0.2);
+    }
+
+    function resetThermalState() {
+      document.getElementById('kpi-chw-temp').innerText = "7.2°C";
+      document.getElementById('gauge-pue-val').innerText = "1.16";
+      document.getElementById('gauge-pue-val').className = "text-5xl font-extrabold font-mono text-emerald-400";
+      document.getElementById('val-cdu-flow').innerText = "420 LPM";
+      Object.values(racks).forEach(rk => {
+        rk.inletTemp = 21.0 + Math.random() * 2;
+        rk.exhaustTemp = 32.5 + Math.random() * 3;
+        rk.powerKw = rk.row === "Row A" ? 85 : 35;
+      });
+      renderServerRows();
+      renderRackGauges();
+      playTone(880);
+    }
+
+    function toggleTelemetryStream() {
+      isStreaming = !isStreaming;
+      document.getElementById('label-stream').innerText = isStreaming ? "Streaming (20Hz)" : "Paused";
+      playTone(isStreaming ? 880 : 440);
+    }
+
+    function exportTelemetryData() {
+      playTone(900);
+      let csv = "Timestamp,Rack,Row,InletTemp_C,ExhaustTemp_C,Power_kW\n";
+      const now = new Date().toISOString();
+      Object.values(racks).forEach(rk => {
+        csv += `${now},${rk.key},${rk.row},${rk.inletTemp.toFixed(1)},${rk.exhaustTemp.toFixed(1)},${rk.powerKw.toFixed(1)}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `ThermalGrid_Telemetry_${Date.now()}.csv`;
+      a.click();
+    }
+
+    let count = 0;
+    setInterval(() => {
+      if (!isStreaming) return;
+      count++;
+      Object.values(racks).forEach(rk => {
+        rk.inletTemp += (Math.random() - 0.49) * 0.15;
+        rk.exhaustTemp += (Math.random() - 0.49) * 0.2;
+      });
+      renderRackGauges();
+      if (count % 30 === 0) {
+        addInspectorLog('POST', '/piwebapi/batch', 200, {
+          RequestCount: 32,
+          ExecutionTimeMs: 12.4,
+          TagValues: "Synchronized AF Attributes"
+        });
+      }
+    }, 200);
+
+    renderServerRows();
+    renderRackGauges();
+  </script>
+</body>
+</html>
